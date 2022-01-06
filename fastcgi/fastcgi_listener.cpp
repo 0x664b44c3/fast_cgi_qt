@@ -12,12 +12,16 @@
 
 #include "fastcgi_connection.h"
 #include <QDebug>
+#include <QTimer>
+
 namespace FastCGI
 {
 
 Listener::Listener(QObject *parent) : QObject(parent),
     mTcpServer(nullptr),
-    mLocalServer(nullptr)
+    mLocalServer(nullptr),
+    mMaxConnections(-1),
+    mConnectionCount(0)
 {
 }
 
@@ -72,16 +76,40 @@ bool Listener::isListening() const
 	return false;
 }
 
+int Listener::maxConnections() const
+{
+	return mMaxConnections;
+}
+
+void Listener::setMaxConnections(int newMaxConnections)
+{
+	mMaxConnections = newMaxConnections;
+}
+
+//you can use the socket object to e.g. check the remote host's address
+//if a nullptr is passed, ignore the socket (only eval connection count).
+bool Listener::connectionPermitted(QTcpSocket*) const
+{
+	if ((mMaxConnections>0) && (mConnectionCount>=mMaxConnections))
+		return false;
+	return true;
+}
+
 void Listener::onNewTcpConnection()
 {
 	while(mTcpServer->hasPendingConnections())
 	{
-//		qDebug()<<"new connection";
 		QTcpSocket * socket = mTcpServer->nextPendingConnection();
 		if (!socket)
 			break;
 		auto conn = new Connection(socket, this);
+		++mConnectionCount;
+		connect(conn, &Connection::connectionClosed,
+		        this, &Listener::onConnectionClosed);
 		emit newConnection(conn);
+
+		if ((mMaxConnections>0) && (mConnectionCount>=mMaxConnections))
+			mTcpServer->pauseAccepting();
 	}
 }
 
@@ -89,13 +117,33 @@ void Listener::onNewLocalConnection()
 {
 	while(mLocalServer->hasPendingConnections())
 	{
-//		qDebug()<<"new connection";
 		QLocalSocket * socket = mLocalServer->nextPendingConnection();
+
 		if (!socket)
 			break;
+
 		auto conn = new Connection(socket, this);
+		++mConnectionCount;
+		connect(conn, &Connection::connectionClosed,
+		        this, &Listener::onConnectionClosed);
 		emit newConnection(conn);
 	}
+}
+
+void Listener::onConnectionClosed()
+{
+	if (mConnectionCount>0)
+		--mConnectionCount;
+	if (mConnectionCount < mMaxConnections)
+	{
+		if (mTcpServer)
+			mTcpServer->resumeAccepting();
+	}
+}
+
+void Listener::reCheckPendingConns()
+{
+
 }
 
 }

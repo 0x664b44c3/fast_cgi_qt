@@ -24,26 +24,14 @@ void fcgiApp::deleteHandler(QString url)
 	mHandlers.remove(url);
 }
 
-void fcgiApp::startCgi()
-{
-//	mFCgi->start();
-//	if (!mFCgi->isStarted())
-//	{
-//		emit failedToStart(1, mFCgi->errorString());
-//		qCritical()<< "CGI process would not start: " << mFCgi->errorString();
-//		QCoreApplication::instance()->exit(1);
-//	}
-}
-
 void fcgiApp::onNewRequest(FastCGI::Request *request)
 {
-	qDebug()<<"request stdin closed.";
+
 	FastCGI::RequestWrapper req(request);
 	QString scriptUrl = req.scriptUri();
 	bool found = false;
 
 	int ret=404;
-	request->writeStdOut("X-Status: OK\r\n");
 	auto handler = mHandlers.value(scriptUrl, nullptr);
 	if (handler)
 	{

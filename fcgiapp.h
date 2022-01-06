@@ -33,7 +33,7 @@ public:
 signals:
 	void failedToStart(int errorCode, QString message);
 public slots:
-	void startCgi();
+
 private slots:
 	void onNewRequest(FastCGI::Request *request);
 
