@@ -6,7 +6,6 @@
 
 #include <QDebug>
 namespace FastCGI
-
 {
 
 FastCGI::FastCGI(QObject *parent) :
@@ -28,7 +27,7 @@ bool FastCGI::listenLocal(QString path)
 
 bool FastCGI::isListening() const
 {
-	return mListener->isListening();
+    return mListener->isListening();
 }
 
 void FastCGI::onNewConnection(Connection * conn)

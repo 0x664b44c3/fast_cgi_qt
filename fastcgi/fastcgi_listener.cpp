@@ -40,7 +40,11 @@ bool Listener::listenTcp(const QHostAddress &bindAddr, quint16 port)
 	else
 		mTcpServer = new QTcpServer(this);
 
-	mTcpServer->listen(bindAddr, port);
+    if (!mTcpServer->listen(bindAddr, port))
+    {
+        qCritical()<<mTcpServer->errorString();
+    }
+
 	connect(mTcpServer, &QTcpServer::newConnection, this, &Listener::onNewTcpConnection);
 	return mTcpServer->isListening();
 }

@@ -154,6 +154,7 @@ QStringList Request::parameterNames() const
 
 void Request::finishRequest(quint32 retval)
 {
+
 	if (mReqState == rsFinished)
 		return;
 

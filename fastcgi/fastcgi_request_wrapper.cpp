@@ -1,10 +1,9 @@
 
 #include "fastcgi_request_wrapper.h"
 #include "fastcgi_request.h"
-#include <QDebug>
 #include <iostream>
 #include <ctype.h>
-
+#include <QDebug>
 QMap<QString, QString> parseHeaderFields(const QByteArray hdr)
 {
 	QMap<QString, QString> data;
@@ -21,7 +20,7 @@ QMap<QString, QString> parseHeaderFields(const QByteArray hdr)
 		idx = hdr.indexOf('=', idx);
 		if (idx<0)
 		{
-			qDebug()<<"no = found";
+            qDebug()<<"no = found";
 			break;
 		}
 		name = QString::fromLatin1(hdr.mid(start, idx - start));
@@ -48,7 +47,7 @@ QMap<QString, QString> parseHeaderFields(const QByteArray hdr)
 
 namespace FastCGI
 {
-RequestWrapper::RequestWrapper(Request *req) : mRequest(req), mHeadersSent(false)
+RequestWrapper::RequestWrapper(Request *req) : mRequest(req), mHeadersSent(false), mBufferResponse(false)
 {
 	mScriptUri = QString::fromLocal8Bit(req->parameter("SCRIPT_NAME"));
 	mRequestMethod = QString::fromLocal8Bit(req->parameter("REQUEST_METHOD"));
@@ -65,32 +64,75 @@ QMap<QString, QByteArray> RequestWrapper::parameters() const
 	return mRequest->parameters();
 }
 
+void RequestWrapper::setHeader(QString name, const char * d)
+{
+    setHeader(name, QString::fromLocal8Bit(d));
+}
+
+void RequestWrapper::setHeader(QString name, const QByteArray d)
+{
+    setHeader(name, QString::fromLocal8Bit(d));
+}
+
 void RequestWrapper::setHeader(QString name, QString data)
 {
+    if (mHeadersSent)
+    {
+        qWarning()<<"Warning: headers already sent!";
+    }
 	mHeaders.insert(name, data);
 }
 
+void RequestWrapper::setHeader(QString name, int n)
+{
+    if (mHeadersSent)
+        qWarning()<<"Warning: headers already sent!";
+    mHeaders.insert(name, QString("%1").arg(n));
+}
+
+
 QMap<QString, QString> &RequestWrapper::headers()
 {
-	return mHeaders;
+    return mHeaders;
+}
+
+QString RequestWrapper::header(QString key) const
+{
+    return mHeaders.value(key);
 }
 
 quint64 RequestWrapper::writeResponse(const QByteArray & d)
 {
-	if (!mHeadersSent && mHeaders.size())
-	{
-		sendHeaders();
-	}
-	return mRequest->writeStdOut(d);
+    if (mBufferResponse)
+    {
+        mStdOutBuffer.append(d);
+        return d.size();
+    }
+    else
+    {
+        if (!mHeadersSent)
+        {
+            sendHeaders();
+        }
+        return mRequest->writeStdOut(d);
+    }
 }
 
 qint64 RequestWrapper::writeResponse(const char *d, qint64 len)
 {
-	if (!mHeadersSent && mHeaders.size())
-	{
-		sendHeaders();
-	}
-	return mRequest->writeStdOut(d, len);
+    if (mBufferResponse)
+    {
+        mStdOutBuffer.append(d,len);
+        return len;
+    }
+    else
+    {
+        if (!mHeadersSent && mHeaders.size())
+        {
+            sendHeaders();
+        }
+        return mRequest->writeStdOut(d, len);
+    }
 }
 
 QString RequestWrapper::scriptUri() const
@@ -114,7 +156,21 @@ void RequestWrapper::sendHeaders()
 		           .toLocal8Bit());
 	}
 	mRequest->writeStdOut("\r\n");
-	mHeadersSent = true;
+    mHeadersSent = true;
+}
+
+void RequestWrapper::flush()
+{
+    if (!headersSent())
+        sendHeaders();
+    mRequest->writeStdOut(mStdOutBuffer);
+    mStdOutBuffer.clear();
+    mBufferResponse = false;
+}
+
+bool RequestWrapper::headersSent() const
+{
+    return mHeadersSent;
 }
 
 QMap<QString, QByteArray> RequestWrapper::parseFormData()
@@ -177,17 +233,19 @@ QMap<QString, QByteArray> RequestWrapper::parseFormData()
 				if (idx>=in_data.size())
 					break;
 			}
-			if (idx>=in_data.size())
-				break;
+
 			if (lastBoundaryEnd>=0)
 			{
 				parts.push_back(in_data.mid(lastBoundaryEnd, boundary_start-lastBoundaryEnd));
 			}
+            if (idx>=in_data.size())
+                break;
 			lastBoundaryEnd = idx;
 			idx = in_data.indexOf(boundary, lastBoundaryEnd);
 		}
+
 		foreach(QByteArray part, parts)
-		{
+        {
 			QString fieldName;
 			bool isFieldData=false;
 			bool headersDone=false;
@@ -229,6 +287,45 @@ QMap<QString, QByteArray> RequestWrapper::parseFormData()
 	}
 
 	formData.clear();
-	return formData;
+    return formData;
+}
+
+QMap<QString, QByteArray> RequestWrapper::cookies(Request * req)
+{
+        QList<QByteArray> cookies = req->parameter("HTTP_COOKIE").split(';');
+        QMap<QString, QByteArray> cookieJar;
+        for(QByteArray s: qAsConst(cookies))
+        {
+            s=s.trimmed();
+            if (s.isEmpty())
+                continue;
+
+            int sep = s.indexOf('=');
+            if (sep<1)
+                cookieJar.insert(QString::fromLocal8Bit(s),"");
+            else
+                cookieJar.insert(QString::fromLocal8Bit(s.left(sep)), s.mid(sep+1));
+        }
+        return cookieJar;
+}
+
+QMap<QString, QByteArray> RequestWrapper::cookies()
+{
+    return cookies(mRequest);
+}
+
+Request *RequestWrapper::request() const
+{
+    return mRequest;
+}
+
+bool RequestWrapper::bufferResponse() const
+{
+    return mBufferResponse;
+}
+
+void RequestWrapper::setBufferResponse(bool newBufferResponse)
+{
+    mBufferResponse = newBufferResponse;
 }
 }
